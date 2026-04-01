@@ -1,0 +1,409 @@
+#include "config.h"
+#include <WiFi.h>
+#include <WiFiMulti.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+
+WiFiMulti wifiMulti;
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+
+const char INDEX_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>CERBERO</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,sans-serif}
+body{background:#0a0a0f;color:#e0e0e0;padding:16px;max-width:440px;margin:0 auto}
+.header{display:flex;align-items:center;justify-content:space-between;padding-bottom:16px;border-bottom:0.5px solid #222;margin-bottom:16px}
+.title{font-size:22px;font-weight:500;color:#fff;letter-spacing:2px}
+.status{font-size:12px;color:#00ff88;margin-top:4px}
+.dot{width:8px;height:8px;border-radius:50%;background:#00ff88;display:inline-block;margin-right:6px}
+.tabs{display:flex;gap:8px;margin-bottom:20px}
+.tab{flex:1;padding:10px;border-radius:8px;border:0.5px solid #333;background:transparent;color:#555;font-size:13px;cursor:pointer;text-align:center;transition:all 0.15s}
+.tab.active{border-color:#0066ff;color:#0066ff;background:#0066ff15}
+.section-title{font-size:11px;letter-spacing:1.5px;color:#555;text-transform:uppercase;margin-bottom:10px}
+.card{background:#111118;border:0.5px solid #222;border-radius:12px;padding:16px;margin-bottom:10px}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.card-info{display:flex;align-items:center;gap:12px}
+.icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px}
+.card-name{font-size:14px;font-weight:500;color:#e0e0e0}
+.card-sub{font-size:11px;color:#444;margin-top:2px}
+.toggle{width:44px;height:24px;border-radius:12px;background:#222;border:none;cursor:pointer;position:relative;transition:background 0.2s}
+.toggle.on{background:#0066ff}
+.toggle::after{content:'';position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:3px;left:3px;transition:transform 0.2s}
+.toggle.on::after{transform:translateX(20px)}
+.row{display:flex;align-items:center;gap:8px;margin-top:10px}
+.row label{font-size:11px;color:#444;min-width:70px}
+.row input[type=range]{flex:1;accent-color:#0066ff}
+.row .val{font-size:12px;color:#555;min-width:32px;text-align:right}
+.colors{display:flex;gap:6px;margin-top:10px}
+.cdot{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent}
+.cdot.sel{border-color:#fff}
+.anims{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.abtn{font-size:11px;padding:5px 10px;border-radius:6px;border:0.5px solid #333;background:transparent;color:#666;cursor:pointer}
+.abtn.active{border-color:#0066ff;color:#0066ff;background:#0066ff15}
+.divider{height:0.5px;background:#1a1a1a;margin:14px 0}
+.leg-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px}
+.leg-btn{padding:10px 6px;border-radius:8px;border:0.5px solid #333;background:transparent;color:#666;font-size:12px;cursor:pointer;text-align:center}
+.leg-btn.active{border-color:#0066ff;color:#0066ff;background:#0066ff15}
+.cycle-row{display:flex;gap:8px;margin-bottom:14px}
+.cycle-btn{flex:1;padding:10px;border-radius:8px;border:0.5px solid #333;background:transparent;color:#888;font-size:12px;cursor:pointer;text-align:center}
+.c0{border-color:#ff6600!important;color:#ff6600!important;background:#ff660015!important}
+.c1{border-color:#00ff88!important;color:#00ff88!important;background:#00ff8815!important}
+.cn{border-color:#0066ff!important;color:#0066ff!important;background:#0066ff15!important}
+.servo-row{margin-bottom:12px}
+.servo-label{display:flex;justify-content:space-between;margin-bottom:6px}
+.servo-name{font-size:12px;color:#888}
+.servo-val{font-size:12px;color:#0066ff;font-weight:500}
+.save-btn{font-size:11px;padding:3px 10px;border-radius:6px;border:0.5px solid #00ff88;background:transparent;color:#00ff88;cursor:pointer}
+.info-row{display:flex;gap:8px;margin-top:12px}
+.info-badge{flex:1;background:#0d0d15;border-radius:8px;padding:8px 10px;text-align:center;border:0.5px solid #1a1a2e}
+.info-badge-label{font-size:10px;color:#444;margin-bottom:2px}
+.info-badge-val{font-size:13px;font-weight:500;color:#e0e0e0}
+.saved-vals{background:#0d0d15;border-radius:8px;padding:12px;margin-top:12px;border:0.5px solid #1a1a2e}
+.saved-title{font-size:11px;color:#444;margin-bottom:8px;letter-spacing:1px;text-transform:uppercase}
+.saved-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:0.5px solid #1a1a22}
+.saved-row:last-child{border-bottom:none}
+.saved-key{font-size:12px;color:#555}
+.saved-val{font-size:12px;color:#00ff88;font-weight:500}
+.page{display:none}
+.page.active{display:block}
+.master{background:#111118;border:0.5px solid #333;border-radius:12px;padding:16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <div class="title">CERBERO</div>
+    <div class="status"><span class="dot"></span><span id="ipaddr">connessione...</span></div>
+  </div>
+  <div style="text-align:right;font-size:11px;color:#444" id="wifiinfo"></div>
+</div>
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('luci',this)">LUCI</div>
+  <div class="tab" onclick="switchTab('zampe',this)">ZAMPE</div>
+</div>
+<div class="page active" id="page-luci">
+  <div class="master">
+    <div>
+      <div style="font-size:16px;font-weight:500;color:#fff">Accensione totale</div>
+      <div style="font-size:11px;color:#444;margin-top:2px">tutti i LED</div>
+    </div>
+    <button class="toggle on" onclick="toggleCmd('master',this)"></button>
+  </div>
+  <div class="section-title">Zampe</div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-info">
+        <div class="icon" style="background:#001133">🦵</div>
+        <div><div class="card-name">Zampe LED</div><div class="card-sub">78 LED — pin 7/8/9</div></div>
+      </div>
+      <button class="toggle on" onclick="toggleCmd('legs_on',this)"></button>
+    </div>
+    <div class="colors" id="legsColors">
+      <div class="cdot sel" style="background:#0066ff" onclick="setLegsColor(0,0,255,this)"></div>
+      <div class="cdot" style="background:#ff0033" onclick="setLegsColor(255,0,51,this)"></div>
+      <div class="cdot" style="background:#00ff88" onclick="setLegsColor(0,255,136,this)"></div>
+      <div class="cdot" style="background:#ff6600" onclick="setLegsColor(255,102,0,this)"></div>
+      <div class="cdot" style="background:#cc00ff" onclick="setLegsColor(204,0,255,this)"></div>
+      <div class="cdot" style="background:#ffffff" onclick="setLegsColor(255,255,255,this)"></div>
+    </div>
+    <div class="row">
+      <label>Luminosità</label>
+      <input type="range" min="0" max="100" value="70" oninput="send({cmd:'legs_brightness',val:parseInt(this.value)});this.nextElementSibling.textContent=this.value+'%'">
+      <span class="val">70%</span>
+    </div>
+    <div class="anims">
+      <button class="abtn active" onclick="setAnim('legs_anim','rotazione',this)">Rotazione</button>
+      <button class="abtn" onclick="setAnim('legs_anim','kitt',this)">K.I.T.T.</button>
+      <button class="abtn" onclick="setAnim('legs_anim','wave',this)">Wave</button>
+      <button class="abtn" onclick="setAnim('legs_anim','idle',this)">Idle blu</button>
+    </div>
+  </div>
+  <div class="section-title" style="margin-top:16px">Ring grosso</div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-info">
+        <div class="icon" style="background:#110000">⭕</div>
+        <div><div class="card-name">Ring 60 LED</div><div class="card-sub">pin 6</div></div>
+      </div>
+      <button class="toggle on" onclick="toggleCmd('ring_on',this)"></button>
+    </div>
+    <div class="colors" id="ringColors">
+      <div class="cdot sel" style="background:#ffffff" onclick="setRingColor(255,255,255,this)"></div>
+      <div class="cdot" style="background:#ff0033" onclick="setRingColor(255,0,51,this)"></div>
+      <div class="cdot" style="background:#0066ff" onclick="setRingColor(0,102,255,this)"></div>
+    </div>
+    <div class="row">
+      <label>Luminosità</label>
+      <input type="range" min="0" max="100" value="60" oninput="send({cmd:'ring_brightness',val:parseInt(this.value)});this.nextElementSibling.textContent=this.value+'%'">
+      <span class="val">60%</span>
+    </div>
+  </div>
+  <div class="section-title" style="margin-top:16px">Occhio</div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-info">
+        <div class="icon" style="background:#110800">👁</div>
+        <div><div class="card-name">Ring 12 + 8 + 1</div><div class="card-sub">pin 5 — 21 LED</div></div>
+      </div>
+      <button class="toggle on" onclick="toggleCmd('eyes_on',this)"></button>
+    </div>
+    <div class="anims">
+      <button class="abtn active" onclick="setAnim('eyes_anim','respiro',this)">Respiro</button>
+      <button class="abtn" onclick="setAnim('eyes_anim','pulsar',this)">Pulsar</button>
+      <button class="abtn" onclick="setAnim('eyes_anim','arancione',this)">Arancione</button>
+    </div>
+    <div class="row">
+      <label>Luminosità</label>
+      <input type="range" min="0" max="100" value="80" oninput="send({cmd:'eyes_brightness',val:parseInt(this.value)});this.nextElementSibling.textContent=this.value+'%'">
+      <span class="val">80%</span>
+    </div>
+  </div>
+</div>
+<div class="page" id="page-zampe">
+  <div class="section-title">Seleziona zampa</div>
+  <div class="card">
+    <div class="leg-grid" id="legGrid">
+      <div class="leg-btn active" onclick="selectLeg(1,this)">LF<br><span style="font-size:10px;color:#444">front-left</span></div>
+      <div class="leg-btn" onclick="selectLeg(0,this)">RF<br><span style="font-size:10px;color:#444">front-right</span></div>
+      <div class="leg-btn" onclick="selectLeg(3,this)">LM<br><span style="font-size:10px;color:#444">mid-left</span></div>
+      <div class="leg-btn" onclick="selectLeg(2,this)">RM<br><span style="font-size:10px;color:#444">mid-right</span></div>
+      <div class="leg-btn" onclick="selectLeg(5,this)">LB<br><span style="font-size:10px;color:#444">back-left</span></div>
+      <div class="leg-btn" onclick="selectLeg(4,this)">RB<br><span style="font-size:10px;color:#444">back-right</span></div>
+    </div>
+    <div class="divider"></div>
+    <div class="section-title">Cicli</div>
+    <div class="cycle-row">
+      <div class="cycle-btn c0" onclick="sendLegCmd('ciclo0')">Ciclo 0<br><span style="font-size:10px;opacity:0.7">standby</span></div>
+      <div class="cycle-btn c1" onclick="sendLegCmd('ciclo1')">Ciclo 1<br><span style="font-size:10px;opacity:0.7">wake up</span></div>
+      <div class="cycle-btn cn" onclick="sendLegCmd('neutro')">Neutro<br><span style="font-size:10px;opacity:0.7">90°</span></div>
+    </div>
+    <div class="divider"></div>
+    <div class="section-title">Controllo manuale</div>
+    <div class="servo-row">
+      <div class="servo-label">
+        <span class="servo-name">Coxa</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="servo-val" id="coxaVal">90°</span>
+          <button class="save-btn" onclick="saveVal('coxa')">Salva</button>
+        </div>
+      </div>
+      <input type="range" style="width:100%;accent-color:#0066ff" min="0" max="180" value="90"
+        oninput="document.getElementById('coxaVal').textContent=this.value+'°';sendServo('coxa',parseInt(this.value))">
+    </div>
+    <div class="servo-row">
+      <div class="servo-label">
+        <span class="servo-name">Femur</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="servo-val" id="femurVal">90°</span>
+          <button class="save-btn" onclick="saveVal('femur')">Salva</button>
+        </div>
+      </div>
+      <input type="range" style="width:100%;accent-color:#0066ff" min="0" max="180" value="90"
+        oninput="document.getElementById('femurVal').textContent=this.value+'°';sendServo('femur',parseInt(this.value))">
+    </div>
+    <div class="servo-row">
+      <div class="servo-label">
+        <span class="servo-name">Tibia</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="servo-val" id="tibiaVal">90°</span>
+          <button class="save-btn" onclick="saveVal('tibia')">Salva</button>
+        </div>
+      </div>
+      <input type="range" style="width:100%;accent-color:#0066ff" min="0" max="180" value="90"
+        oninput="document.getElementById('tibiaVal').textContent=this.value+'°';sendServo('tibia',parseInt(this.value))">
+    </div>
+    <div class="divider"></div>
+    <div class="section-title" id="chTitle">Canali — LF</div>
+    <div class="info-row">
+      <div class="info-badge"><div class="info-badge-label">Coxa</div><div class="info-badge-val" id="chCoxa">ch 6</div></div>
+      <div class="info-badge"><div class="info-badge-label">Femur</div><div class="info-badge-val" id="chFemur">ch 5</div></div>
+      <div class="info-badge"><div class="info-badge-label">Tibia</div><div class="info-badge-val" id="chTibia">ch 4</div></div>
+      <div class="info-badge"><div class="info-badge-label">Driver</div><div class="info-badge-val" id="chDriver">0x40</div></div>
+    </div>
+    <div class="saved-vals">
+      <div class="saved-title" id="savedTitle">Valori salvati — LF</div>
+      <div class="saved-row"><span class="saved-key">Coxa centro</span><span class="saved-val" id="sv_coxa">—</span></div>
+      <div class="saved-row"><span class="saved-key">Femur centro</span><span class="saved-val" id="sv_femur">—</span></div>
+      <div class="saved-row"><span class="saved-key">Tibia centro</span><span class="saved-val" id="sv_tibia">—</span></div>
+    </div>
+  </div>
+</div>
+<script>
+var ws=new WebSocket('ws://'+location.hostname+'/ws');
+var currentLeg=1;
+var legNames=['RF','LF','RM','LM','RB','LB'];
+var legChannels=[
+  {coxa:2,femur:1,tibia:0,driver:'0x40'},
+  {coxa:6,femur:5,tibia:4,driver:'0x40'},
+  {coxa:13,femur:14,tibia:15,driver:'0x40'},
+  {coxa:2,femur:1,tibia:0,driver:'0x41'},
+  {coxa:9,femur:10,tibia:11,driver:'0x41'},
+  {coxa:13,femur:14,tibia:15,driver:'0x41'}
+];
+var savedVals=[{},{},{},{},{},{}];
+ws.onopen=function(){document.getElementById('ipaddr').textContent='online — '+location.hostname;ws.send('getStatus');};
+ws.onmessage=function(e){var d=JSON.parse(e.data);if(d.ip)document.getElementById('ipaddr').textContent='online — '+d.ip;if(d.wifi)document.getElementById('wifiinfo').textContent=d.wifi;};
+ws.onclose=function(){document.getElementById('ipaddr').textContent='disconnesso';document.querySelector('.dot').style.background='#ff3333';};
+function send(obj){if(ws.readyState===1)ws.send(JSON.stringify(obj));}
+function switchTab(page,el){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));el.classList.add('active');document.getElementById('page-'+page).classList.add('active');}
+function toggleCmd(cmd,btn){btn.classList.toggle('on');send({cmd:cmd,val:btn.classList.contains('on')});}
+function setLegsColor(r,g,b,el){document.querySelectorAll('#legsColors .cdot').forEach(d=>d.classList.remove('sel'));el.classList.add('sel');send({cmd:'legs_color',r:r,g:g,b:b});}
+function setRingColor(r,g,b,el){document.querySelectorAll('#ringColors .cdot').forEach(d=>d.classList.remove('sel'));el.classList.add('sel');send({cmd:'ring_color',r:r,g:g,b:b});}
+function setAnim(cmd,val,el){el.parentElement.querySelectorAll('.abtn').forEach(b=>b.classList.remove('active'));el.classList.add('active');send({cmd:cmd,val:val});}
+function selectLeg(idx,el){
+  currentLeg=idx;
+  document.querySelectorAll('.leg-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  var ch=legChannels[idx];
+  var name=legNames[idx];
+  document.getElementById('chTitle').textContent='Canali — '+name;
+  document.getElementById('savedTitle').textContent='Valori salvati — '+name;
+  document.getElementById('chCoxa').textContent='ch '+ch.coxa;
+  document.getElementById('chFemur').textContent='ch '+ch.femur;
+  document.getElementById('chTibia').textContent='ch '+ch.tibia;
+  document.getElementById('chDriver').textContent=ch.driver;
+  document.querySelectorAll('.servo-row input[type=range]').forEach(s=>s.value=90);
+  document.getElementById('coxaVal').textContent='90°';
+  document.getElementById('femurVal').textContent='90°';
+  document.getElementById('tibiaVal').textContent='90°';
+  updateSavedDisplay();
+}
+function sendServo(servo,val){send({cmd:'servo',leg:currentLeg,servo:servo,val:val});}
+function sendLegCmd(ciclo){send({cmd:'leg_ciclo',leg:currentLeg,ciclo:ciclo});}
+function saveVal(servo){
+  var val=parseInt(document.getElementById(servo+'Val').textContent);
+  if(!savedVals[currentLeg])savedVals[currentLeg]={};
+  savedVals[currentLeg][servo]=val;
+  send({cmd:'save_calib',leg:currentLeg,servo:servo,val:val});
+  updateSavedDisplay();
+}
+function updateSavedDisplay(){
+  var s=savedVals[currentLeg]||{};
+  document.getElementById('sv_coxa').textContent=s.coxa?s.coxa+'°':'—';
+  document.getElementById('sv_femur').textContent=s.femur?s.femur+'°':'—';
+  document.getElementById('sv_tibia').textContent=s.tibia?s.tibia+'°':'—';
+}
+</script>
+</body>
+</html>
+)rawliteral";
+
+void handleWsMessage(uint8_t *data, size_t len) {
+  String msg = String((char*)data).substring(0, len);
+
+  if (msg == "getStatus") {
+    String resp = "{\"ip\":\"" + WiFi.localIP().toString() + "\",\"wifi\":\"" + WiFi.SSID() + "\"}";
+    ws.textAll(resp);
+    return;
+  }
+
+  if (msg.indexOf("\"master\"") > 0)  masterOn  = msg.indexOf("true") > 0;
+  if (msg.indexOf("\"legs_on\"") > 0) legsOn    = msg.indexOf("true") > 0;
+  if (msg.indexOf("\"ring_on\"") > 0) ringBigOn = msg.indexOf("true") > 0;
+  if (msg.indexOf("\"eyes_on\"") > 0) eyesOn    = msg.indexOf("true") > 0;
+
+  if (msg.indexOf("legs_brightness") > 0) {
+    int v = msg.substring(msg.lastIndexOf(":")+1).toInt();
+    leg01.setBrightness(map(v,0,100,0,255));
+    leg23.setBrightness(map(v,0,100,0,255));
+    leg45.setBrightness(map(v,0,100,0,255));
+  }
+  if (msg.indexOf("ring_brightness") > 0) {
+    int v = msg.substring(msg.lastIndexOf(":")+1).toInt();
+    ringBig.setBrightness(map(v,0,100,0,255));
+  }
+  if (msg.indexOf("eyes_brightness") > 0) {
+    int v = msg.substring(msg.lastIndexOf(":")+1).toInt();
+    eyes.setBrightness(map(v,0,100,0,255));
+  }
+  if (msg.indexOf("legs_anim") > 0) {
+    if (msg.indexOf("rotazione") > 0)  legsAnim="rotazione";
+    else if (msg.indexOf("kitt") > 0)  legsAnim="kitt";
+    else if (msg.indexOf("wave") > 0)  legsAnim="wave";
+    else                               legsAnim="idle";
+  }
+  if (msg.indexOf("eyes_anim") > 0) {
+    if (msg.indexOf("respiro") > 0)     eyesAnim="respiro";
+    else if (msg.indexOf("pulsar") > 0) eyesAnim="pulsar";
+    else                                eyesAnim="arancione";
+  }
+  if (msg.indexOf("legs_color") > 0) {
+    legsR=msg.substring(msg.indexOf("\"r\":")+4).toInt();
+    legsG=msg.substring(msg.indexOf("\"g\":")+4).toInt();
+    legsB=msg.substring(msg.indexOf("\"b\":")+4).toInt();
+  }
+  if (msg.indexOf("ring_color") > 0) {
+    ringR=msg.substring(msg.indexOf("\"r\":")+4).toInt();
+    ringG=msg.substring(msg.indexOf("\"g\":")+4).toInt();
+    ringB=msg.substring(msg.indexOf("\"b\":")+4).toInt();
+  }
+  if (msg.indexOf("\"servo\"") > 0) {
+    int legIdx=msg.substring(msg.indexOf("\"leg\":")+6).toInt();
+    int val=msg.substring(msg.lastIndexOf(":")+1).toInt();
+    LegChannels& lc=legs[legIdx];
+    if (msg.indexOf("\"coxa\"") > 0)  moveServo(lc.driver,lc.coxa,val);
+    if (msg.indexOf("\"femur\"") > 0) moveServo(lc.driver,lc.femur,val);
+    if (msg.indexOf("\"tibia\"") > 0) moveServo(lc.driver,lc.tibia,val);
+  }
+  if (msg.indexOf("leg_ciclo") > 0) {
+    int legIdx=msg.substring(msg.indexOf("\"leg\":")+6).toInt();
+    LegCalib& c=calibs[legIdx];
+    if (msg.indexOf("neutro") > 0) {
+      moveLeg(legIdx,90,90,90);
+    } else if (msg.indexOf("ciclo0") > 0) {
+      moveLeg(legIdx,90,c.ciclo0Femur,c.ciclo0Tibia);
+    } else if (msg.indexOf("ciclo1") > 0) {
+      moveLeg(legIdx,90,c.ciclo1FemurC,c.ciclo0Tibia);
+      delay(800);
+      moveLeg(legIdx,90,c.ciclo1FemurA,c.ciclo0Tibia);
+    }
+  }
+  if (msg.indexOf("save_calib") > 0) {
+    int legIdx=msg.substring(msg.indexOf("\"leg\":")+6).toInt();
+    int val=msg.substring(msg.lastIndexOf(":")+1).toInt();
+    if (msg.indexOf("\"coxa\"") > 0)  calibs[legIdx].coxaCentro=val;
+    if (msg.indexOf("\"femur\"") > 0) calibs[legIdx].femurCentro=val;
+    if (msg.indexOf("\"tibia\"") > 0) calibs[legIdx].tibiaCentro=val;
+  }
+}
+
+void onWsEvent(AsyncWebSocket *s, AsyncWebSocketClient *client,
+               AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  if (type == WS_EVT_DATA) {
+    AwsFrameInfo *info = (AwsFrameInfo*)arg;
+    if (info->final && info->index==0 && info->len==len && info->opcode==WS_TEXT)
+      handleWsMessage(data, len);
+  }
+}
+
+void wifi_init() {
+  wifiMulti.addAP("NOME_WIFI_CASA", "PASSWORD_CASA");
+  wifiMulti.addAP("HOTSPOT_TELEFONO", "PASSWORD_HOTSPOT");
+
+  Serial.print("Connessione WiFi");
+  int t = 0;
+  while (wifiMulti.run() != WL_CONNECTED && t < 20) {
+    delay(500); Serial.print("."); t++;
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nConnesso! IP: " + WiFi.localIP().toString());
+  } else {
+    Serial.println("\nAP: " + String(AP_SSID));
+    WiFi.softAP(AP_SSID, AP_PASS);
+    Serial.println("IP: " + WiFi.softAPIP().toString());
+  }
+
+  ws.onEvent(onWsEvent);
+  server.addHandler(&ws);
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *r){
+    r->send_P(200, "text/html", INDEX_HTML);
+  });
+  server.begin();
+  Serial.println("Server avviato!");
+}
